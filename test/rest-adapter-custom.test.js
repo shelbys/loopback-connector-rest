@@ -9,19 +9,7 @@ describe('REST connector', function () {
 
     var server = null;
     before(function (done) {
-      var express = require('express');
-      var app = express();
-
-      app.configure(function () {
-        app.set('port', process.env.PORT || 3000);
-        app.set('views', __dirname + '/views');
-        app.set('view engine', 'ejs');
-        app.use(express.favicon());
-        // app.use(express.logger('dev'));
-        app.use(express.bodyParser());
-        app.use(express.methodOverride());
-        app.use(app.router);
-      });
+      var app = require('./express-helper')();
 
       app.all('*', function (req, res, next) {
         res.setHeader('Content-Type', 'application/json');
@@ -32,7 +20,7 @@ describe('REST connector', function () {
           query: req.query,
           body: req.body
         };
-        res.json(200, payload);
+        res.status(200).json(payload);
       });
 
       server = app.listen(app.get('port'), function (err, data) {
@@ -181,6 +169,57 @@ describe('REST connector', function () {
         done(err, address);
       });
 
+    });
+
+    it('should map clientKey and clientCert to key and cert for backwards compat', function () {
+      var spec = require('./request-template.json');
+      var template = {
+        clientKey : 'CLIENT.KEY',
+        clientCert: 'CLIENT.CERT',
+        operations: [
+          {template: spec, functions: {
+              m1: ["x"]
+          }}
+        ]
+      };
+      var ds = new DataSource(require('../lib/rest-connector'), template);
+      assert.equal(ds.connector._settings.key, template.clientKey);
+      assert.equal(ds.connector._settings.cert, template.clientCert);
+    });
+
+    it('should keep order of prececence: options, top level, and defaults', function (done) {
+      var spec = require('./request-template.json');
+      var template = {
+        options : {
+          'headers': {
+            'x-options'   : 'options'
+          }
+        },
+        'headers': {
+          'x-top'         : 'top',
+          'x-options'     : 'top'
+        },
+        defaults: {
+          'headers': {
+            'x-defaults'  : 'defaults',
+            'x-options'   : 'defaults',
+            'x-top'       : 'defaults'
+          }
+        },
+        operations: [
+          {template: spec, functions: {
+              m1: ["x"]
+          }}
+        ]
+      };
+      var ds = new DataSource(require('../lib/rest-connector'), template);
+      var model = ds.createModel('rest');
+      model.m1(3, function (err, result) {
+        assert.equal(result.headers['x-defaults'], 'defaults');
+        assert.equal(result.headers['x-options'], 'options');
+        assert.equal(result.headers['x-top'], 'top');
+        done(err, result);
+      });
     });
 
   });

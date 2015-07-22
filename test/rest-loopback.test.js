@@ -1,7 +1,15 @@
 var assert = require('assert');
 
 var DataSource = require('loopback-datasource-juggler').DataSource;
-var ds = new DataSource(require('../lib/rest-connector'), {baseURL: 'http://localhost:3000'});
+var ds = new DataSource(require('../lib/rest-connector'),
+  {
+    baseURL: 'http://localhost:3000',
+    defaults: {
+      headers: {
+        'X-MY-HEADER': 'my-header'
+      }
+    }
+  });
 
 // simplier way to describe model
 var User = ds.define('User', {
@@ -19,26 +27,15 @@ describe('REST connector', function () {
 
     var server = null;
     before(function (done) {
-      var express = require('express');
-      var app = express();
 
-      app.configure(function () {
-        app.set('port', process.env.PORT || 3000);
-        app.set('views', __dirname + '/views');
-        app.set('view engine', 'ejs');
-        app.use(express.favicon());
-        // app.use(express.logger('dev'));
-        app.use(express.bodyParser());
-        app.use(express.methodOverride());
-        app.use(app.router);
-      });
+      var app = require('./express-helper')();
 
       var count = 2;
       var users = [new User({id: 1, name: 'Ray'}), new User({id: 2, name: 'Joe'})]
 
       app.get('/Users', function (req, res, next) {
         res.setHeader('Content-Type', 'application/json');
-        res.json(200, users);
+        res.status(200).json(users);
       });
 
       app.post('/Users', function (req, res, next) {
@@ -49,7 +46,7 @@ describe('REST connector', function () {
         }
         res.setHeader('Location', req.protocol + '://' + req.headers['host'] + '/' + body.id);
         users.push(body);
-        res.json(201, body);
+        res.status(201).json(body);
       });
 
       app.put('/Users/:id', function (req, res, next) {
@@ -58,11 +55,11 @@ describe('REST connector', function () {
           if (user.id == req.params.id) {
             res.setHeader('Content-Type', 'application/json');
             users[i] = req.body;
-            res.send(200);
+            res.status(200).end();
             return;
           }
         }
-        res.send(404);
+        res.status(404).end();
       });
 
       app.delete('/Users/:id', function (req, res, next) {
@@ -71,11 +68,11 @@ describe('REST connector', function () {
           if (user.id == req.params.id) {
             res.setHeader('Content-Type', 'application/json');
             users.splice(i, 1);
-            res.send(200);
+            res.status(200).end();
             return;
           }
         }
-        res.send(404);
+        res.status(404).end();
       });
 
       app.get('/Users/:id', function (req, res, next) {
@@ -83,11 +80,12 @@ describe('REST connector', function () {
           var user = users[i];
           if (user.id == req.params.id) {
             res.setHeader('Content-Type', 'application/json');
-            res.json(200, user);
+            user.myHeader = req.get('x-my-header');
+            res.status(200).json(user);
             return;
           }
         }
-        res.send(404);
+        res.status(404).end();
       });
 
       server = app.listen(app.get('port'), function (err, data) {
@@ -109,11 +107,22 @@ describe('REST connector', function () {
       });
     });
 
+    var user1;
     it('should find the user with id 1', function (done) {
       User.findById(1, function (err, body) {
         // console.log(body);
         assert.equal(1, body.id);
         assert.equal('Ray', body.name);
+        user1 = body;
+        done(err, body);
+      });
+    });
+
+    it('should honor defaults for request', function (done) {
+      User.findById(1, function (err, body) {
+        // console.log(body);
+        assert.equal(1, body.id);
+        assert.equal('my-header', body.myHeader);
         done(err, body);
       });
     });
@@ -127,7 +136,8 @@ describe('REST connector', function () {
     });
 
     it('should update user 1', function (done) {
-      new User({id: 1, name: 'Raymond'}).save(function (err, body) {
+      user1.name = 'Raymond';
+      user1.save(function (err, body) {
         // console.log(err, body);
         done(err, body);
       });
@@ -155,6 +165,27 @@ describe('REST connector', function () {
 
     it('should list all users', function (done) {
       User.find(function (err, body) {
+        // console.log(body);
+        assert.equal(2, body.length);
+        done(err, body);
+      });
+    });
+
+    it('should invoke hooks', function(done) {
+      var events = [];
+      var connector = ds.connector;
+      connector.observe('before execute', function(ctx, next) {
+        assert(ctx.req);
+        events.push('before execute');
+        next();
+      });
+      connector.observe('after execute', function(ctx, next) {
+        assert(ctx.res);
+        events.push('after execute');
+        next();
+      });
+      User.find(function(err, body) {
+        assert.deepEqual(events, ['before execute', 'after execute']);
         // console.log(body);
         assert.equal(2, body.length);
         done(err, body);
