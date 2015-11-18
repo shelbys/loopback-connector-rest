@@ -1,3 +1,15 @@
+2015-09-18, Version 1.10.1
+==========================
+
+ * Relax the test so that it matches both ave and avenue (Raymond Feng)
+
+
+2015-07-10, Version 1.10.0
+==========================
+
+ * Use JSON.parse for default json values (Raymond Feng)
+
+
 2015-05-27, Version 1.9.0
 =========================
 
